@@ -181,13 +181,3 @@ sudo apt install nginx certbot python3-certbot-nginx -y
 ```
 
 ---
-
-## Safety notes
-
-Do not commit private keys, passwords, `.env` files, certificates, or server secrets to this repository.
-
-The script only allows website roots inside:
-
-```text
-/var/www/
-```
