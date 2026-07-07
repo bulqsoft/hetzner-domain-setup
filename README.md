@@ -19,7 +19,7 @@ This tool automates the server-side domain setup.
 ## Before using this script
 First, manually create the DNS A record in your domain provider.
 
-*Example:*
+**Example:**
 ```text
 example.com → SERVER_IP
 
