@@ -4,7 +4,7 @@ Reusable Bash script to set up domains on a Hetzner Ubuntu/Nginx server.
 
 This tool automates the server-side domain setup.
 
-*It can:*
+**It can:**
 - Create website folder inside `/var/www`
 - Add a Coming Soon page
 - Create Nginx config
