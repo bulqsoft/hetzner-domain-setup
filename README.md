@@ -1,8 +1,8 @@
 # Hetzner Domain Setup Tool
 
-Reusable Bash script to set up domains on a Hetzner Ubuntu/Nginx server.
+Automate your domain mapping and DNS configuration seamlessly on Hetzner Cloud.
 
-This tool automates the server-side domain setup.
+Reusable Bash script to set up domains on a Hetzner Ubuntu/Nginx server.
 
 ## What it can do
 
