@@ -91,7 +91,7 @@ def plan_site(project: str, hostname: str, server_ipv4: str) -> dict:
         "nginx_enabled": str(enabled_dir / ("bulq-" + slug + ".conf")),
         "preview_auth": str(preview_auth),
         "certbot_email": email,
-        "dns_record": {"type": "A", "name": host.split(".")[0], "fqdn": host, "value": ip},
+        "dns_record": {"type": "A", "name": next(host[:-(len(suffix) + 1)] for suffix in allowed_domains if host.endswith("." + suffix)), "fqdn": host, "value": ip},
     }
     payload = json.dumps(details, sort_keys=True, separators=(",", ":"))
     details["plan_id"] = hashlib.sha256(payload.encode()).hexdigest()
@@ -168,7 +168,7 @@ def provision_staging(project: str, hostname: str, server_ipv4: str, approval_to
     enabled = Path(plan["nginx_enabled"])
     if root.exists() or root.is_symlink() or available.exists() or available.is_symlink() or enabled.exists() or enabled.is_symlink():
         raise SiteError("Existing staging or Nginx config detected. Refusing to overwrite.")
-    for directory in (root.parent.parent, available.parent, enabled.parent):
+    for directory in (root.parent, root.parent.parent, available.parent, enabled.parent):
         if directory.is_symlink():
             raise SiteError("A managed parent directory is a symlink")
     _consume_approval(plan["plan_id"], approval_token)
