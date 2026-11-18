@@ -66,9 +66,11 @@ class StagingEngineTests(unittest.TestCase):
     def test_missing_release_identity_blocks_provisioning(self):
         plan = plan_site("client", "build.bulqsoft.com", "46.224.190.101")
         token = issue_approval(plan["plan_id"])
-        with patch("automation.site_engine.os.geteuid", return_value=0), \\
-             patch("automation.site_engine._verify_dns"), \\
-             patch.dict(os.environ, {"BULQ_RELEASE_USER": ""}):
+        with (
+            patch("automation.site_engine.os.geteuid", return_value=0),
+            patch("automation.site_engine._verify_dns"),
+            patch.dict(os.environ, {"BULQ_RELEASE_USER": ""}),
+        ):
             with self.assertRaisesRegex(SiteError, "BULQ_RELEASE_USER"):
                 provision_staging("client", "build.bulqsoft.com", "46.224.190.101", token)
         self.assertFalse(Path(plan["webroot"]).exists())
