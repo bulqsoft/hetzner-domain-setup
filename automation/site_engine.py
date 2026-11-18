@@ -91,7 +91,7 @@ def plan_site(project: str, hostname: str, server_ipv4: str) -> dict:
         "nginx_enabled": str(enabled_dir / ("bulq-" + slug + ".conf")),
         "preview_auth": str(preview_auth),
         "certbot_email": email,
-        "dns_record": {"type": "A", "name": next(host[:-(len(suffix) + 1)] for suffix in allowed_domains if host.endswith("." + suffix)), "fqdn": host, "value": ip},
+        "dns_record": {"type": "A", "name": host[:-(len(max((s for s in allowed_domains if host.endswith("." + s)), key=len)) + 1)], "fqdn": host, "value": ip},
     }
     payload = json.dumps(details, sort_keys=True, separators=(",", ":"))
     details["plan_id"] = hashlib.sha256(payload.encode()).hexdigest()
@@ -196,8 +196,9 @@ def provision_staging(project: str, hostname: str, server_ipv4: str, approval_to
             "    location / { try_files $uri $uri/ =404; }\n"
             "}\n"
         )
-        available.write_text(nginx_config, encoding="utf-8")
-        config_created = True
+        with available.open("x", encoding="utf-8") as config:
+            config_created = True
+            config.write(nginx_config)
         enabled.symlink_to(available)
         link_created = True
         _run("nginx", "-t")
