@@ -11,6 +11,7 @@ import html
 import ipaddress
 import json
 import os
+import pwd
 from pathlib import Path
 import re
 import secrets
@@ -219,6 +220,17 @@ def provision_staging(project: str, hostname: str, server_ipv4: str, approval_to
     for directory in (root.parent, root.parent.parent, available.parent, enabled.parent):
         if directory.is_symlink():
             raise SiteError("A managed parent directory is a symlink")
+    # The publishing service is a different, non-root account. Require a
+    # pre-existing dedicated account and never create system users through MCP.
+    deploy_name = os.environ.get("BULQ_RELEASE_USER", "").strip()
+    if not deploy_name or deploy_name == "root":
+        raise SiteError("Configure a dedicated non-root BULQ_RELEASE_USER")
+    try:
+        deploy_identity = pwd.getpwnam(deploy_name)
+    except KeyError as exc:
+        raise SiteError("Dedicated staging release user does not exist") from exc
+    if deploy_identity.pw_uid == 0:
+        raise SiteError("Refusing to grant staging release access to root")
     _consume_approval(plan["plan_id"], approval_token)
 
     site_created = config_created = link_created = False
@@ -258,6 +270,11 @@ def provision_staging(project: str, hostname: str, server_ipv4: str, approval_to
         available.write_text(_nginx_config(plan, tls_enabled=True), encoding="utf-8")
         _run("nginx", "-t")
         _run("systemctl", "reload", "nginx")
+        # Only the new managed staging directory and its releases subfolder
+        # are writable by the restricted release user. Nginx and cert files
+        # remain exclusively managed by the privileged provisioning helper.
+        os.chown(root / "releases", deploy_identity.pw_uid, deploy_identity.pw_gid)
+        os.chown(root, deploy_identity.pw_uid, deploy_identity.pw_gid)
     except Exception:
         # Only artifacts created by THIS invocation are removed. No pre-existing site is modified.
         if link_created:
