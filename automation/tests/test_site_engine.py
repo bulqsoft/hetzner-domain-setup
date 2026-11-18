@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -24,6 +25,7 @@ class StagingEngineTests(unittest.TestCase):
             "BULQ_ALLOWED_DNS_SUFFIXES": "bulqsoft.com,example.org",
             "BULQ_ALLOWED_SERVER_IPS": "46.224.190.101",
             "BULQ_SITE_ROOT": str(base / "sites"),
+            "BULQ_RELEASE_USER": "website-release",
             "BULQ_NGINX_AVAILABLE": str(self.available),
             "BULQ_NGINX_ENABLED": str(self.enabled),
             "BULQ_PREVIEW_HTPASSWD": str(self.auth_file),
@@ -33,6 +35,12 @@ class StagingEngineTests(unittest.TestCase):
         })
         self.env.start()
         self.addCleanup(self.env.stop)
+        self.user_lookup = patch("automation.site_engine.pwd.getpwnam", return_value=SimpleNamespace(pw_uid=1001, pw_gid=1001))
+        self.user_lookup.start()
+        self.addCleanup(self.user_lookup.stop)
+        self.chown = patch("automation.site_engine.os.chown")
+        self.chown_mock = self.chown.start()
+        self.addCleanup(self.chown.stop)
 
     def test_non_mutating_plan(self):
         plan = plan_site("sample-client", "staging.bulqsoft.com", "46.224.190.101")
@@ -61,6 +69,7 @@ class StagingEngineTests(unittest.TestCase):
             result = provision_staging("client", "build.bulqsoft.com", "46.224.190.101", token)
             self.assertTrue(result["protected"])
             self.assertEqual(runner.call_count, 5)
+            self.assertEqual(self.chown_mock.call_count, 2)
             with self.assertRaises(SiteError):
                 provision_staging("client", "build.bulqsoft.com", "46.224.190.101", token)
 
