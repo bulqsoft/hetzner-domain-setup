@@ -1,0 +1,29 @@
+name: Staging automation safety tests
+
+on:
+  push:
+    paths:
+      - "automation/**"
+      - ".github/workflows/staging-automation-tests.yml"
+  pull_request:
+    paths:
+      - "automation/**"
+      - ".github/workflows/staging-automation-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  safety-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Python sources
+        run: python -m compileall -q automation
+      - name: Run offline tests
+        run: python -m unittest discover -s automation/tests -v
