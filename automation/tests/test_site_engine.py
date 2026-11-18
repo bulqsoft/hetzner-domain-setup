@@ -22,7 +22,7 @@ class StagingEngineTests(unittest.TestCase):
         self.enabled = base / "nginx-enabled"
         self.enabled.mkdir()
         self.env = patch.dict(os.environ, {
-            "BULQ_ALLOWED_DNS_SUFFIXES": "bulqsoft.com,example.org",
+            "BULQ_ALLOWED_DNS_SUFFIXES": "bulqsoft.com,example.org,bedgadgets.nl",
             "BULQ_ALLOWED_SERVER_IPS": "46.224.190.101",
             "BULQ_SITE_ROOT": str(base / "sites"),
             "BULQ_RELEASE_USER": "website-release",
@@ -46,6 +46,31 @@ class StagingEngineTests(unittest.TestCase):
         plan = plan_site("sample-client", "staging.bulqsoft.com", "46.224.190.101")
         self.assertEqual(plan["dns_record"]["type"], "A")
         self.assertTrue(plan["requires_approval"])
+        self.assertFalse(Path(plan["webroot"]).exists())
+
+    def test_https_preview_vhost_and_acme_path(self):
+        from automation.site_engine import _nginx_config
+        plan = plan_site("bedgadgets", "staging.bedgadgets.nl", "46.224.190.101")
+        http = _nginx_config(plan, tls_enabled=False)
+        https = _nginx_config(plan, tls_enabled=True)
+        self.assertIn("auth_basic 'Private Bulqsoft preview'", http)
+        self.assertIn("auth_basic 'Private Bulqsoft preview'", https)
+        self.assertIn("location ^~ /.well-known/acme-challenge/", https)
+        self.assertIn("auth_basic off;", https)
+        self.assertIn("return 301 https://$host$request_uri;", https)
+        self.assertIn("listen 443 ssl;", https)
+        self.assertIn("/etc/letsencrypt/live/staging.bedgadgets.nl/fullchain.pem", https)
+        self.assertIn("noindex, nofollow", https)
+        self.assertNotIn("listen 443 ssl;", http)
+
+    def test_missing_release_identity_blocks_provisioning(self):
+        plan = plan_site("client", "build.bulqsoft.com", "46.224.190.101")
+        token = issue_approval(plan["plan_id"])
+        with patch("automation.site_engine.os.geteuid", return_value=0), \\
+             patch("automation.site_engine._verify_dns"), \\
+             patch.dict(os.environ, {"BULQ_RELEASE_USER": ""}):
+            with self.assertRaisesRegex(SiteError, "BULQ_RELEASE_USER"):
+                provision_staging("client", "build.bulqsoft.com", "46.224.190.101", token)
         self.assertFalse(Path(plan["webroot"]).exists())
 
     def test_disallowed_domain_and_server(self):
