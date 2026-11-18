@@ -3,9 +3,13 @@
 Run over a trusted private transport only. No anonymous HTTP listener.
 Production DNS changes are performed by the existing, separate DNS connector.
 """
+import json
+import os
+import subprocess
+
 from mcp.server.fastmcp import FastMCP
 
-from automation.site_engine import plan_site, provision_staging
+from automation.site_engine import SiteError, plan_site
 from automation.site_release import plan_site_release, publish_approved_site_release, site_release_status
 
 mcp = FastMCP("Bulqsoft Website Operations")
@@ -26,7 +30,21 @@ def execute_approved_staging(
     The token cannot be generated through MCP. Hostname must already resolve to
     the approved server. Never use this tool to modify a pre-existing website.
     """
-    return provision_staging(project, hostname, server_ipv4, approval_token)
+    if os.geteuid() == 0:
+        raise SiteError("The MCP server must run as a restricted, non-root account")
+    request = json.dumps({"project": project, "hostname": hostname,
+                          "server_ipv4": server_ipv4, "approval_token": approval_token})
+    # No shell and no token in argv. The approved, root-owned entrypoint must
+    # be installed separately and granted exactly one sudoers permission.
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "/usr/local/sbin/bulq-staging-provision"],
+            input=request, text=True, capture_output=True,
+            check=True, timeout=240,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise SiteError("Privileged staging worker failed; review restricted host logs") from exc
+    return json.loads(result.stdout)
 
 
 
@@ -53,4 +71,6 @@ def execute_approved_site_release(project: str, files: dict[str, str],
                                          approval_token)
 
 if __name__ == "__main__":
+    if os.geteuid() == 0:
+        raise SystemExit("Refusing to run MCP server as root")
     mcp.run(transport="stdio")
