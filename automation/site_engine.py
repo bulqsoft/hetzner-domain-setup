@@ -182,13 +182,23 @@ def provision_staging(project: str, hostname: str, server_ipv4: str, approval_to
                    "<meta name='robots' content='noindex,nofollow'>"
                    "<title>Bulqsoft staging</title></head><body><h1>Private website preview</h1>"
                    f"<p>{html.escape(plan['hostname'])}</p></body></html>\n")
-        (root / "index.html").write_text(landing, encoding="utf-8")
-        (root / "index.html").chmod(0o644)
+        # Only the active revision is served. The release worker switches this
+        # symlink atomically without changing Nginx configuration.
+        bootstrap = root / "releases" / "bootstrap"
+        bootstrap.mkdir(parents=True, mode=0o755)
+        (bootstrap / "index.html").write_text(landing, encoding="utf-8")
+        (bootstrap / "index.html").chmod(0o644)
+        (root / "current").symlink_to("releases/bootstrap")
+        (root / ".bulq-managed.json").write_text(
+            json.dumps({"version": 1, "project": plan["project"],
+                        "hostname": plan["hostname"]}, sort_keys=True),
+            encoding="utf-8",
+        )
         nginx_config = (
             "server {\n"
             "    listen 80;\n"
             f"    server_name {plan['hostname']};\n"
-            f"    root {root};\n"
+            f"    root {root / 'current'};\n"
             "    index index.html;\n"
             "    add_header X-Robots-Tag 'noindex, nofollow' always;\n"
             "    auth_basic 'Private Bulqsoft preview';\n"
