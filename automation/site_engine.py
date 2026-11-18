@@ -154,6 +154,54 @@ def _run(*args: str) -> None:
     subprocess.run(list(args), check=True, timeout=120, capture_output=True, text=True)
 
 
+def _nginx_config(plan: dict, *, tls_enabled: bool) -> str:
+    """Generate a private preview vhost without allowing Certbot to edit Nginx."""
+    root = Path(plan["webroot"])
+    host = plan["hostname"]
+    auth = plan["preview_auth"]
+    # ACME must be allowed before TLS can be issued; all other content stays
+    # under Basic Auth. The challenge root is distinct from current website.
+    challenge = (
+        "    location ^~ /.well-known/acme-challenge/ {\n"
+        "        auth_basic off;\n"
+        f"        root {root};\n"
+        "        try_files $uri =404;\n"
+        "    }\n"
+    )
+    credentials = (
+        "    add_header X-Robots-Tag 'noindex, nofollow' always;\n"
+        "    auth_basic 'Private Bulqsoft preview';\n"
+        f"    auth_basic_user_file {auth};\n"
+    )
+    http = (
+        "server {\n"
+        "    listen 80;\n"
+        f"    server_name {host};\n"
+        f"    root {root / 'current'};\n"
+        "    index index.html;\n"
+        + credentials + challenge
+        + ("    location / { return 301 https://$host$request_uri; }\n"
+           if tls_enabled else "    location / { try_files $uri $uri/ =404; }\n")
+        + "}\n"
+    )
+    if not tls_enabled:
+        return http
+    cert_base = f"/etc/letsencrypt/live/{host}"
+    https = (
+        "server {\n"
+        "    listen 443 ssl;\n"
+        f"    server_name {host};\n"
+        f"    root {root / 'current'};\n"
+        "    index index.html;\n"
+        f"    ssl_certificate {cert_base}/fullchain.pem;\n"
+        f"    ssl_certificate_key {cert_base}/privkey.pem;\n"
+        + credentials
+        + "    location / { try_files $uri $uri/ =404; }\n"
+        + "}\n"
+    )
+    return http + https
+
+
 def provision_staging(project: str, hostname: str, server_ipv4: str, approval_token: str) -> dict:
     """Provision ONLY a brand-new, protected staging site; never overwrite a live site."""
     plan = plan_site(project, hostname, server_ipv4)
@@ -194,18 +242,7 @@ def provision_staging(project: str, hostname: str, server_ipv4: str, approval_to
                         "hostname": plan["hostname"]}, sort_keys=True),
             encoding="utf-8",
         )
-        nginx_config = (
-            "server {\n"
-            "    listen 80;\n"
-            f"    server_name {plan['hostname']};\n"
-            f"    root {root / 'current'};\n"
-            "    index index.html;\n"
-            "    add_header X-Robots-Tag 'noindex, nofollow' always;\n"
-            "    auth_basic 'Private Bulqsoft preview';\n"
-            f"    auth_basic_user_file {auth_file};\n"
-            "    location / { try_files $uri $uri/ =404; }\n"
-            "}\n"
-        )
+        nginx_config = _nginx_config(plan, tls_enabled=False)
         with available.open("x", encoding="utf-8") as config:
             config_created = True
             config.write(nginx_config)
@@ -213,8 +250,12 @@ def provision_staging(project: str, hostname: str, server_ipv4: str, approval_to
         link_created = True
         _run("nginx", "-t")
         _run("systemctl", "reload", "nginx")
-        _run("certbot", "--nginx", "--non-interactive", "--agree-tos", "--redirect",
+        # Certbot uses webroot only. Do not let its Nginx plugin edit any
+        # pre-existing virtual host or unrelated server configuration.
+        _run("certbot", "certonly", "--webroot", "--webroot-path", str(root),
+             "--non-interactive", "--agree-tos",
              "--email", plan["certbot_email"], "-d", plan["hostname"])
+        available.write_text(_nginx_config(plan, tls_enabled=True), encoding="utf-8")
         _run("nginx", "-t")
         _run("systemctl", "reload", "nginx")
     except Exception:
